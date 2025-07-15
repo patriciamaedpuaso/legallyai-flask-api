@@ -4,7 +4,7 @@ from io import BytesIO
 from html2docx import html2docx
 
 app = Flask(__name__)
-CORS(app)  # Allow cross-origin requests
+CORS(app, origins="*")
 
 @app.route('/convert/html-to-docx', methods=['POST'])
 def convert():
