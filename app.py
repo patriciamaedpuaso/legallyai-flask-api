@@ -1,53 +1,48 @@
-from flask import Flask, request, send_file
+from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
-from io import BytesIO
 import pypandoc
 import tempfile
 import os
-from bs4 import BeautifulSoup
 
 app = Flask(__name__)
-CORS(app, origins="*")
+CORS(app, origins="*")  # Allow all origins for CORS
 
-def preprocess_html(html: str) -> str:
-    soup = BeautifulSoup(html, 'html.parser')
-
-    for tag in soup.find_all(True):
-        style = tag.get('style', '')
-
-        # Handle text alignment
-        if 'text-align:center' in style:
-            tag['align'] = 'center'
-        elif 'text-align:right' in style:
-            tag['align'] = 'right'
-        elif 'text-align:left' in style:
-            tag['align'] = 'left'
-
-        # Handle text color
-        if 'color:' in style:
-            color_value = style.split('color:')[1].split(';')[0].strip()
-            tag['style'] = f'color:{color_value}'  # Keep only color
-        else:
-            tag.attrs.pop('style', None)  # Remove unused style
-
-    return str(soup)
+# Path to your custom reference DOCX (must be in same folder or provide full path)
+REFERENCE_DOCX_PATH = os.path.join(os.path.dirname(__file__), 'reference.docx')
 
 @app.route('/convert/html-to-docx', methods=['POST'])
-def convert():
-    data = request.get_json()
-    html = data.get('html', '')
-
+def convert_html_to_docx():
     try:
-        processed_html = preprocess_html(html)
+        data = request.get_json()
+        html = data.get('html', '')
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-            output_path = tmp.name
-            pypandoc.convert_text(processed_html, 'docx', format='html', outputfile=output_path)
+        if not html.strip():
+            return jsonify({"error": "Empty HTML content"}), 400
 
+        # Wrap HTML in <html><body> to ensure valid structure
+        full_html = f"<html><body>{html}</body></html>"
+
+        # Create temporary file for output DOCX
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
+            output_path = tmp_docx.name
+
+        # Convert HTML to DOCX using Pandoc and reference file
+        pypandoc.convert_text(
+            full_html,
+            to='docx',
+            format='html',
+            outputfile=output_path,
+            extra_args=[
+                f'--reference-doc={REFERENCE_DOCX_PATH}',
+                '--standalone'
+            ]
+        )
+
+        # Read and return file as attachment
         with open(output_path, 'rb') as f:
             docx_data = f.read()
 
-        os.remove(output_path)
+        os.remove(output_path)  # Clean up temp file
 
         return send_file(
             BytesIO(docx_data),
@@ -55,8 +50,9 @@ def convert():
             as_attachment=True,
             download_name='converted.docx'
         )
+
     except Exception as e:
-        return {"error": str(e)}, 500
+        return jsonify({"error": f"Conversion failed: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    app.run()
+    app.run(debug=True)
