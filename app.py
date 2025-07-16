@@ -9,35 +9,26 @@ from bs4 import BeautifulSoup
 app = Flask(__name__)
 CORS(app, origins="*")
 
-def clean_html(html):
+def preprocess_html(html: str) -> str:
     soup = BeautifulSoup(html, 'html.parser')
 
-    # Convert <p style="text-align:..."> to <p align="...">
-    for p in soup.find_all('p'):
-        if 'style' in p.attrs:
-            style = p['style']
-            if 'text-align' in style:
-                align = style.split('text-align:')[1].split(';')[0].strip()
-                p['align'] = align
-                del p['style']
+    for tag in soup.find_all(True):
+        style = tag.get('style', '')
 
-    # Convert <span style="color:..."> to <font color="...">
-    for span in soup.find_all('span'):
-        if 'style' in span.attrs and 'color' in span['style']:
-            color = span['style'].split('color:')[1].split(';')[0].strip()
-            font_tag = soup.new_tag('font', color=color)
-            font_tag.string = span.get_text()
-            span.replace_with(font_tag)
+        # Handle text alignment
+        if 'text-align:center' in style:
+            tag['align'] = 'center'
+        elif 'text-align:right' in style:
+            tag['align'] = 'right'
+        elif 'text-align:left' in style:
+            tag['align'] = 'left'
 
-    # Convert <em style="color:..."> to <font color="..."><em>...</em></font>
-    for em in soup.find_all('em'):
-        if 'style' in em.attrs and 'color' in em['style']:
-            color = em['style'].split('color:')[1].split(';')[0].strip()
-            font_tag = soup.new_tag('font', color=color)
-            em_copy = soup.new_tag('em')
-            em_copy.string = em.get_text()
-            font_tag.append(em_copy)
-            em.replace_with(font_tag)
+        # Handle text color
+        if 'color:' in style:
+            color_value = style.split('color:')[1].split(';')[0].strip()
+            tag['style'] = f'color:{color_value}'  # Keep only color
+        else:
+            tag.attrs.pop('style', None)  # Remove unused style
 
     return str(soup)
 
@@ -47,16 +38,11 @@ def convert():
     html = data.get('html', '')
 
     try:
-        cleaned_html = clean_html(html)
+        processed_html = preprocess_html(html)
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
             output_path = tmp.name
-            pypandoc.convert_text(
-                cleaned_html,
-                'docx',
-                format='html',
-                outputfile=output_path
-            )
+            pypandoc.convert_text(processed_html, 'docx', format='html', outputfile=output_path)
 
         with open(output_path, 'rb') as f:
             docx_data = f.read()
