@@ -60,25 +60,22 @@ def add_paragraph_with_formatting(document, element):
         return
 
     if element.name == 'p':
-        style = element.get('style', '')
-        align = WD_ALIGN_PARAGRAPH.LEFT
-        if 'text-align:' in style:
-            try:
-                align_val = style.lower().split('text-align:')[1].split(';')[0].strip()
-                align = get_alignment(align_val)
-            except:
-                pass
-
+        align = get_alignment(element.get('style', '').lower().split('text-align:')[-1].split(';')[0].strip()) \
+                if 'text-align:' in element.get('style', '') else WD_ALIGN_PARAGRAPH.LEFT
         p = document.add_paragraph()
         p.alignment = align
-        extract_text_with_formatting(p, element)
+        for child in element.children:
+            run = p.add_run(child.get_text() if hasattr(child, 'get_text') else str(child))
+            if hasattr(child, 'attrs'):
+                apply_styles(run, child)
 
     elif element.name in ['ul', 'ol']:
-        list_style = 'List Bullet' if element.name == 'ul' else 'List Number'
         for li in element.find_all('li', recursive=False):
-            p = document.add_paragraph(style=list_style)
-            extract_text_with_formatting(p, li)
-
+            p = document.add_paragraph(style='List Bullet' if element.name == 'ul' else 'List Number')
+            for child in li.children:
+                run = p.add_run(child.get_text() if hasattr(child, 'get_text') else str(child))
+                if hasattr(child, 'attrs'):
+                    apply_styles(run, child)
 
 @app.route('/convert/html-to-docx', methods=['POST'])
 def convert_html_to_docx():
