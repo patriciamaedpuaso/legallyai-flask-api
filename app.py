@@ -1,82 +1,99 @@
 from flask import Flask, request, send_file, jsonify
-from flask_cors import CORS
+from docx import Document
+from docx.shared import Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from io import BytesIO
 from bs4 import BeautifulSoup
-from docx import Document
-from docx.shared import RGBColor, Pt
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-import re
 
 app = Flask(__name__)
-CORS(app, origins="*")
 
+# Helper functions
+def parse_color(color_str):
+    try:
+        color_str = color_str.lstrip('#')
+        return RGBColor(int(color_str[0:2], 16), int(color_str[2:4], 16), int(color_str[4:6], 16))
+    except:
+        return None
 
-def hex_to_rgb(hex_color):
-    """Convert hex color string to RGBColor"""
-    hex_color = hex_color.lstrip('#')
-    r, g, b = [int(hex_color[i:i+2], 16) for i in (0, 2, 4)]
-    return RGBColor(r, g, b)
+def apply_styles(run, element):
+    style = element.get('style', '')
+    for rule in style.split(';'):
+        if ':' in rule:
+            key, value = [s.strip() for s in rule.split(':', 1)]
+            if key == 'color':
+                rgb = parse_color(value)
+                if rgb:
+                    run.font.color.rgb = rgb
+            elif key == 'font-size':
+                try:
+                    size = int(value.replace('px', '').strip())
+                    run.font.size = Pt(size)
+                except:
+                    pass
+            elif key == 'font-family':
+                run.font.name = value.split(',')[0].strip().strip('"\'')  # Take first font
 
+    if element.name in ['strong', 'b']:
+        run.bold = True
+    if element.name in ['em', 'i']:
+        run.italic = True
+    if element.name == 'u':
+        run.underline = True
+
+def get_alignment(align_str):
+    if align_str == 'center':
+        return WD_ALIGN_PARAGRAPH.CENTER
+    elif align_str == 'right':
+        return WD_ALIGN_PARAGRAPH.RIGHT
+    elif align_str == 'justify':
+        return WD_ALIGN_PARAGRAPH.JUSTIFY
+    else:
+        return WD_ALIGN_PARAGRAPH.LEFT
+
+def add_paragraph_with_formatting(document, element):
+    if element.name and element.name.startswith('h'):
+        level = int(element.name[1])
+        p = document.add_paragraph(element.get_text(strip=True))
+        p.style = f'Heading {min(level, 6)}'
+        return
+
+    if element.name == 'p':
+        align = get_alignment(element.get('style', '').lower().split('text-align:')[-1].split(';')[0].strip()) \
+                if 'text-align:' in element.get('style', '') else WD_ALIGN_PARAGRAPH.LEFT
+        p = document.add_paragraph()
+        p.alignment = align
+        for child in element.children:
+            run = p.add_run(child.get_text() if hasattr(child, 'get_text') else str(child))
+            if hasattr(child, 'attrs'):
+                apply_styles(run, child)
+
+    elif element.name in ['ul', 'ol']:
+        for li in element.find_all('li', recursive=False):
+            p = document.add_paragraph(style='List Bullet' if element.name == 'ul' else 'List Number')
+            for child in li.children:
+                run = p.add_run(child.get_text() if hasattr(child, 'get_text') else str(child))
+                if hasattr(child, 'attrs'):
+                    apply_styles(run, child)
 
 @app.route('/convert/html-to-docx', methods=['POST'])
 def convert_html_to_docx():
     data = request.get_json()
-    html = data.get("html", "")
+    html = data.get('html', '')
 
-    # Wrap in <html><body> if not present
-    if "<html" not in html:
-        html = f"<html><body>{html}</body></html>"
-
-    soup = BeautifulSoup(html, "html.parser")
     document = Document()
+    soup = BeautifulSoup(html, 'html.parser')
 
-    for p in soup.find_all("p"):
-        style = p.get("style", "")
-        align_match = re.search(r"text-align\s*:\s*(\w+)", style)
-        align = align_match.group(1) if align_match else "left"
+    body = soup.body if soup.body else soup
 
-        para = document.add_paragraph()
-        if align == "center":
-            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        elif align == "right":
-            para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        else:
-            para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    for element in body.children:
+        if getattr(element, 'name', None) in ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol']:
+            add_paragraph_with_formatting(document, element)
 
-        for child in p.children:
-            if child.name is None:
-                para.add_run(str(child))
-                continue
+    byte_io = BytesIO()
+    document.save(byte_io)
+    byte_io.seek(0)
 
-            run = para.add_run(child.get_text())
-
-            # Text styles
-            if child.name == "strong" or "font-weight:bold" in child.get("style", ""):
-                run.bold = True
-            if child.name == "em" or "font-style:italic" in child.get("style", ""):
-                run.italic = True
-            if child.name == "u" or "text-decoration:underline" in child.get("style", ""):
-                run.underline = True
-
-            # Text color
-            style = child.get("style", "")
-            color_match = re.search(r"color\s*:\s*(#[0-9A-Fa-f]{6})", style)
-            if color_match:
-                hex_color = color_match.group(1)
-                run.font.color.rgb = hex_to_rgb(hex_color)
-
-    # Save to BytesIO
-    docx_io = BytesIO()
-    document.save(docx_io)
-    docx_io.seek(0)
-
-    return send_file(
-        docx_io,
-        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        as_attachment=True,
-        download_name="converted.docx"
-    )
-
+    return send_file(byte_io, as_attachment=True, download_name='converted.docx', mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
 
 if __name__ == '__main__':
-    app.run()
+    app.run(debug=True)
