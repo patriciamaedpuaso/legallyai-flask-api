@@ -1,11 +1,13 @@
 from flask import Flask, request, send_file, jsonify
 from docx import Document
+from flask_cors import CORS
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from io import BytesIO
 from bs4 import BeautifulSoup
 
 app = Flask(__name__)
+CORS(app, origins="*")
 
 # Helper functions
 def parse_color(color_str):
