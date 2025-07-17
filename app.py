@@ -5,6 +5,7 @@ from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from io import BytesIO
 from bs4 import BeautifulSoup
+from weasyprint import HTML
 
 app = Flask(__name__)
 CORS(app, origins="*")
@@ -97,5 +98,24 @@ def convert_html_to_docx():
 
     return send_file(byte_io, as_attachment=True, download_name='converted.docx', mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
 
+    # 📄 PDF Export Endpoint
+@app.route('/convert/html-to-pdf', methods=['POST'])
+def convert_html_to_pdf():
+    data = request.get_json()
+    html = data.get('html', '')
+    if '<html' not in html:
+        html = f"<html><body>{html}</body></html>"
+
+    pdf_io = BytesIO()
+    HTML(string=html).write_pdf(pdf_io)
+    pdf_io.seek(0)
+
+    return send_file(
+        pdf_io,
+        as_attachment=True,
+        download_name='converted.pdf',
+        mimetype='application/pdf'
+    )
+    
 if __name__ == '__main__':
     app.run(debug=True)
