@@ -54,20 +54,6 @@ def get_alignment(align_str):
         return WD_ALIGN_PARAGRAPH.LEFT
 
 def add_paragraph_with_formatting(document, element):
-    def walk_children(parent, paragraph):
-        for child in parent.children:
-            if isinstance(child, str):
-                paragraph.add_run(child)
-            elif hasattr(child, 'name'):
-                run = paragraph.add_run()
-                apply_styles(run, child)
-                if child.string:
-                    run.text = child.string
-                else:
-                    nested_text = ''.join(c if isinstance(c, str) else c.get_text() for c in child.children)
-                    run.text = nested_text
-                walk_children(child, paragraph)
-
     if element.name and element.name.startswith('h'):
         level = int(element.name[1])
         p = document.add_paragraph(element.get_text(strip=True))
@@ -79,12 +65,18 @@ def add_paragraph_with_formatting(document, element):
                 if 'text-align:' in element.get('style', '') else WD_ALIGN_PARAGRAPH.LEFT
         p = document.add_paragraph()
         p.alignment = align
-        walk_children(element, p)
+        for child in element.children:
+            run = p.add_run(child.get_text() if hasattr(child, 'get_text') else str(child))
+            if hasattr(child, 'attrs'):
+                apply_styles(run, child)
 
     elif element.name in ['ul', 'ol']:
         for li in element.find_all('li', recursive=False):
             p = document.add_paragraph(style='List Bullet' if element.name == 'ul' else 'List Number')
-            walk_children(li, p)
+            for child in li.children:
+                run = p.add_run(child.get_text() if hasattr(child, 'get_text') else str(child))
+                if hasattr(child, 'attrs'):
+                    apply_styles(run, child)
 
 @app.route('/convert/html-to-docx', methods=['POST'])
 def convert_html_to_docx():
