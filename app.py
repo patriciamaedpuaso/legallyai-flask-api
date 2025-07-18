@@ -5,6 +5,7 @@ from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from io import BytesIO
 from bs4 import BeautifulSoup
+from weasyprint import HTML, CSS
 
 app = Flask(__name__)
 CORS(app, origins="*")
@@ -115,6 +116,6 @@ def convert_html_to_pdf():
         download_name='converted.pdf',
         mimetype='application/pdf'
     )
-    
+
 if __name__ == '__main__':
     app.run(debug=True)
