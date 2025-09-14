@@ -1,5 +1,7 @@
 flask
+flask-cors
 python-docx
 requests
 gunicorn
 PyMuPDF
+lxml
